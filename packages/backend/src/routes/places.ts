@@ -164,21 +164,86 @@ router.delete("/:id", async (req, res) => {
   res.status(204).send();
 });
 
-// POST /api/places/import — CSV seed import (Google Maps saved places export, or any
-// CSV with a name/title column). Untried by default: imported places default to
-// status "want_to_try" unless the CSV has a recognizable status column with a valid value.
+interface NormalizedImportRow {
+  name: string;
+  category?: string;
+  neighborhood?: string;
+  address?: string;
+  notes?: string;
+  status?: string;
+  lat?: number;
+  lng?: number;
+}
+
+function normalizeCsvRows(buffer: Buffer): NormalizedImportRow[] {
+  const records: Record<string, string>[] = parse(buffer, {
+    columns: (header: string[]) => header.map((h) => h.trim().toLowerCase()),
+    skip_empty_lines: true,
+    trim: true,
+  });
+
+  return records
+    .map((row): NormalizedImportRow | null => {
+      const name = row["title"] || row["name"] || row["place"];
+      if (!name) return null;
+      const noteParts = [row["note"], row["comment"], row["notes"], row["url"]].filter(Boolean);
+      return {
+        name,
+        category: row["category"] || undefined,
+        neighborhood: row["neighborhood"] || undefined,
+        notes: noteParts.join(" — ") || undefined,
+        status: row["status"] || undefined,
+      };
+    })
+    .filter((r): r is NormalizedImportRow => r !== null);
+}
+
+// Google Takeout's Maps "Saved" export is GeoJSON, not CSV — one FeatureCollection per
+// list, each feature a saved place with a properties.location object (name/address) and
+// [lng, lat] point geometry. properties.location isn't always present (a bare saved pin
+// without full place data), so fall back to properties itself for name/address.
+function normalizeGoogleTakeoutGeoJson(buffer: Buffer): NormalizedImportRow[] {
+  const data = JSON.parse(buffer.toString("utf8"));
+  const features = Array.isArray(data?.features) ? data.features : Array.isArray(data) ? data : [];
+
+  return features
+    .map((feature: Record<string, unknown>) => {
+      const props = (feature?.properties ?? {}) as Record<string, unknown>;
+      const location = (props.location ?? props) as Record<string, unknown>;
+      const name = (location.name as string) || (location.address as string) || (props.google_maps_url as string);
+      if (!name) return null;
+
+      const coords = (feature?.geometry as { coordinates?: unknown })?.coordinates;
+      const [lng, lat] = Array.isArray(coords) ? coords : [undefined, undefined];
+
+      return {
+        name,
+        address: (location.address as string) || undefined,
+        notes: (props.comment as string) || undefined,
+        lat: typeof lat === "number" ? lat : undefined,
+        lng: typeof lng === "number" ? lng : undefined,
+      };
+    })
+    .filter((r: NormalizedImportRow | null): r is NormalizedImportRow => r !== null);
+}
+
+// POST /api/places/import — seed import from a Google Maps saved-places export. Accepts
+// either format Google Takeout hands out (CSV for some list types, GeoJSON for Maps
+// "Saved" lists), detected by file extension with a content sniff fallback in case a file
+// got renamed. Untried by default: imported places default to status "want_to_try" unless
+// the source has a recognizable status column/field with a valid value.
 router.post("/import", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded (field name: file)" });
 
-  let records: Record<string, string>[];
+  const filename = req.file.originalname.toLowerCase();
+  const looksLikeJson = /^\s*[{[]/.test(req.file.buffer.toString("utf8", 0, 100));
+  const isJson = filename.endsWith(".json") || (!filename.endsWith(".csv") && looksLikeJson);
+
+  let rows: NormalizedImportRow[];
   try {
-    records = parse(req.file.buffer, {
-      columns: (header: string[]) => header.map((h) => h.trim().toLowerCase()),
-      skip_empty_lines: true,
-      trim: true,
-    });
+    rows = isJson ? normalizeGoogleTakeoutGeoJson(req.file.buffer) : normalizeCsvRows(req.file.buffer);
   } catch (err) {
-    return res.status(400).json({ error: `Could not parse CSV: ${(err as Error).message}` });
+    return res.status(400).json({ error: `Could not parse ${isJson ? "JSON" : "CSV"}: ${(err as Error).message}` });
   }
 
   const defaultCategory =
@@ -186,32 +251,39 @@ router.post("/import", upload.single("file"), async (req, res) => {
       ? req.body.default_category.trim()
       : "uncategorized";
 
-  const results = { imported: 0, skippedDuplicates: 0, skippedInvalid: 0, total: records.length };
+  const results = { imported: 0, skippedDuplicates: 0, skippedInvalid: 0, total: rows.length };
 
-  for (const row of records) {
-    const name = row["title"] || row["name"] || row["place"];
-    if (!name) {
+  for (const row of rows) {
+    if (!row.name) {
       results.skippedInvalid++;
       continue;
     }
 
-    const existing = await pool.query("SELECT id FROM places WHERE LOWER(name) = LOWER($1)", [name]);
+    const existing = await pool.query("SELECT id FROM places WHERE LOWER(name) = LOWER($1)", [row.name]);
     if (existing.rows.length > 0) {
       results.skippedDuplicates++;
       continue;
     }
 
-    const noteParts = [row["note"], row["comment"], row["notes"], row["url"]].filter(Boolean);
-    const category = row["category"] || defaultCategory;
-    const statusRaw = (row["status"] || "").toLowerCase().replace(/\s+/g, "_");
+    const category = row.category || defaultCategory;
+    const statusRaw = (row.status || "").toLowerCase().replace(/\s+/g, "_");
     const status: PlaceStatus = VALID_STATUS.includes(statusRaw as PlaceStatus)
       ? (statusRaw as PlaceStatus)
       : "want_to_try";
 
     await pool.query(
-      `INSERT INTO places (name, category, neighborhood, notes, status, source)
-       VALUES ($1,$2,$3,$4,$5,'csv_import')`,
-      [name, category, row["neighborhood"] || null, noteParts.join(" — ") || null, status],
+      `INSERT INTO places (name, category, neighborhood, address, lat, lng, notes, status, source)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'csv_import')`,
+      [
+        row.name,
+        category,
+        row.neighborhood || null,
+        row.address || null,
+        row.lat ?? null,
+        row.lng ?? null,
+        row.notes || null,
+        status,
+      ],
     );
     results.imported++;
   }

@@ -261,11 +261,13 @@ export default function SpotsPage() {
       )}
 
       <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-2 text-sm font-semibold text-slate-700">Import from CSV (Google Maps saved places)</h3>
+        <h3 className="mb-2 text-sm font-semibold text-slate-700">
+          Import from Google Maps saved places (CSV or JSON)
+        </h3>
         <form onSubmit={handleImport} className="flex flex-wrap items-center gap-2">
           <input
             type="file"
-            accept=".csv"
+            accept=".csv,.json"
             onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
             className="text-sm"
           />
@@ -285,7 +287,9 @@ export default function SpotsPage() {
         </form>
         {importResult && <p className="mt-2 text-sm text-slate-600">{importResult}</p>}
         <p className="mt-1 text-xs text-slate-400">
-          Imported rows default to "want to try" unless the CSV has a valid status column.
+          Works with either format Google Takeout exports "Maps (your places)" lists in —
+          CSV or GeoJSON. Imported rows default to "want to try" unless the file has a
+          valid status column/field.
         </p>
       </div>
 
