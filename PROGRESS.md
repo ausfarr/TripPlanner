@@ -4,6 +4,25 @@ Built autonomously in one session (2026-08-28). This is the running log the task
 for — decisions made along the way, what's done, what's left, and exactly what's needed
 from you to go live.
 
+## Update: delete outings
+
+Added `DELETE /api/outings/:id` and delete buttons in the UI: a plain "Delete" per outing
+on the Outings page, plus a "Discard plan" button right on the Plan page's results panel
+(deletes every outing from that generation at once, clears the panel back to the form) —
+covers the specific case Austin asked for: generating a plan, deciding not to do it. Delete
+cascades to `outing_places` (FK `ON DELETE CASCADE`, already in the original schema — no
+migration needed) but leaves the underlying `places` rows untouched, including any
+auto-saved `ai_suggested` ones — discarding a plan shouldn't retroactively remove something
+from Spots.
+
+Verified against a real Postgres + a live browser: created a place and an outing via the
+real API, deleted the outing, confirmed a 204, confirmed the outing now 404s, confirmed
+`outing_places` actually cascade-deleted (queried the table directly), confirmed the
+underlying place still exists, and confirmed deleting an already-deleted outing correctly
+404s rather than erroring. Then drove the actual UI with Playwright — clicked Delete,
+confirmed the native confirm dialog fires with the right message, accepted it, and watched
+the page fall back to the empty state. Both workspaces typecheck clean.
+
 ## Update: general preferences memory + opt-in web-search suggestions in itineraries
 
 Two new v1.1 features, requested after the initial build:

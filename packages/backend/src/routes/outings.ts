@@ -141,6 +141,16 @@ router.patch("/:id", async (req, res) => {
   res.json(await fetchOutingWithPlaces(req.params.id));
 });
 
+// DELETE /api/outings/:id — discard an outing entirely (e.g. a generated plan you're not
+// going to do). outing_places rows cascade-delete with it (FK ON DELETE CASCADE); the
+// underlying `places` rows are untouched, including any auto-saved ai_suggested ones —
+// deleting a plan shouldn't retroactively remove something from Spots.
+router.delete("/:id", async (req, res) => {
+  const result = await pool.query("DELETE FROM outings WHERE id = $1 RETURNING id", [req.params.id]);
+  if (result.rows.length === 0) return res.status(404).json({ error: "Outing not found" });
+  res.status(204).send();
+});
+
 // POST /api/outings/:id/places — add a stop to an outing
 router.post("/:id/places", async (req, res) => {
   const b = req.body ?? {};

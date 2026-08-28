@@ -42,6 +42,7 @@ export const api = {
     get: (id: string) => request<Outing>(`/outings/${id}`),
     update: (id: string, data: Partial<Outing>) =>
       request<Outing>(`/outings/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    remove: (id: string) => request<void>(`/outings/${id}`, { method: "DELETE" }),
     rate: (outingId: string, outingPlaceId: string, rating: "up" | "down", ratingNote?: string) =>
       request<Outing>(`/outings/${outingId}/places/${outingPlaceId}/rate`, {
         method: "POST",

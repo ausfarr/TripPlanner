@@ -187,7 +187,10 @@ All under `/api`. REST-ish, JSON in/out.
   offer CSV for those — discovered when Austin went to use the importer; see PROGRESS.md).
   Format is detected by file extension with a content-sniff fallback.
 - `GET /api/recommendations` — scored, ranked list (query params for category/filter).
-- `GET/POST /api/outings`, `GET/PATCH /api/outings/:id` — history log CRUD.
+- `GET/POST /api/outings`, `GET/PATCH/DELETE /api/outings/:id` — history log CRUD. Delete
+  covers discarding a generated plan you're not going to act on — cascades to
+  `outing_places` (schema already had `ON DELETE CASCADE`) but never touches the
+  underlying `places` rows.
 - `POST /api/outings/:id/places/:outingPlaceId/rate` — post-outing thumbs up/down + note.
 - `POST /api/wizard/candidates` — given wizard answers, returns filtered/ranked/weather-aware
   candidate places per slot (no LLM call — this is the cheap deterministic step).

@@ -24,6 +24,7 @@ export default function PlanPage() {
   const [summary, setSummary] = useState<string | null>(null);
   const [outings, setOutings] = useState<Outing[]>([]);
   const [swapping, setSwapping] = useState<string | null>(null);
+  const [discarding, setDiscarding] = useState(false);
 
   async function handleGenerate(e: FormEvent) {
     e.preventDefault();
@@ -49,6 +50,20 @@ export default function PlanPage() {
       setError((err as Error).message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDiscard() {
+    if (!confirm("Discard this plan? It'll be deleted, not just hidden.")) return;
+    setDiscarding(true);
+    try {
+      await Promise.all(outings.map((o) => api.outings.remove(o.id)));
+      setSummary(null);
+      setOutings([]);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDiscarding(false);
     }
   }
 
@@ -188,7 +203,16 @@ export default function PlanPage() {
       {summary && (
         <div className="space-y-4">
           <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <h3 className="text-sm font-semibold text-slate-700">Overview</h3>
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="text-sm font-semibold text-slate-700">Overview</h3>
+              <button
+                onClick={handleDiscard}
+                disabled={discarding}
+                className="shrink-0 text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-40"
+              >
+                {discarding ? "Discarding…" : "Discard plan"}
+              </button>
+            </div>
             <p className="mt-1 text-sm text-slate-600">{summary}</p>
           </div>
 

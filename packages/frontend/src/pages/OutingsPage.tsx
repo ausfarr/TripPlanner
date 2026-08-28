@@ -29,6 +29,12 @@ export default function OutingsPage() {
     await load();
   }
 
+  async function handleDelete(outingId: string) {
+    if (!confirm("Delete this outing? This can't be undone.")) return;
+    await api.outings.remove(outingId);
+    await load();
+  }
+
   async function rate(outingId: string, outingPlaceId: string, rating: "up" | "down") {
     await api.outings.rate(outingId, outingPlaceId, rating, noteDrafts[outingPlaceId]);
     await load();
@@ -55,14 +61,22 @@ export default function OutingsPage() {
                   {formatOutingDate(outing.outing_date)}{" "}
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{outing.status}</span>
                 </p>
-                {outing.status === "planned" && (
+                <div className="flex items-center gap-3">
+                  {outing.status === "planned" && (
+                    <button
+                      onClick={() => markCompleted(outing.id)}
+                      className="text-xs font-medium text-slate-500 hover:text-slate-900"
+                    >
+                      Mark completed
+                    </button>
+                  )}
                   <button
-                    onClick={() => markCompleted(outing.id)}
-                    className="text-xs font-medium text-slate-500 hover:text-slate-900"
+                    onClick={() => handleDelete(outing.id)}
+                    className="text-xs font-medium text-red-500 hover:text-red-700"
                   >
-                    Mark completed
+                    Delete
                   </button>
-                )}
+                </div>
               </div>
               {outing.itinerary_summary && <p className="mt-1 text-sm text-slate-600">{outing.itinerary_summary}</p>}
 
