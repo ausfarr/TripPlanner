@@ -1,4 +1,4 @@
-import type { Outing, Place, ScoredPlace, WizardInput } from "../types.js";
+import type { Outing, Person, Place, Preference, ScoredPlace, Sentiment, WizardInput } from "../types.js";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -47,6 +47,12 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ rating, rating_note: ratingNote }),
       }),
+  },
+  preferences: {
+    list: (person?: Person) => request<Preference[]>(`/preferences${person ? `?person=${person}` : ""}`),
+    create: (person: Person, sentiment: Sentiment, note: string) =>
+      request<Preference>("/preferences", { method: "POST", body: JSON.stringify({ person, sentiment, note }) }),
+    remove: (id: string) => request<void>(`/preferences/${id}`, { method: "DELETE" }),
   },
   wizard: {
     candidates: (input: WizardInput) =>

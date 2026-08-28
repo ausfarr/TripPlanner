@@ -95,7 +95,7 @@ The core spots database (feature 1).
 | lat, lng | double precision | nullable — not required at entry time, useful later for real distance calc instead of neighborhood-string matching |
 | notes | text | freeform |
 | status | text | check in `('want_to_try','been','favorite','pass')`, default `'want_to_try'` |
-| source | text | `'manual'` \| `'csv_import'`, default `'manual'` |
+| source | text | `'manual'` \| `'csv_import'` \| `'ai_suggested'`, default `'manual'`. The third value was added post-launch for the web-search-augmented itinerary feature (section 6) — a genuinely new place Claude surfaces via search gets auto-inserted here, tagged distinctly so it's never confused with something Austin actually vetted himself. |
 | created_at, updated_at | timestamptz | |
 
 ### `outings`
@@ -140,6 +140,24 @@ not something one rating decides). Marking an outing `completed` also bumps any 
 still-`want_to_try`, still-unrated stops to `been`, so visitation is tracked even without an
 explicit rating.
 
+### `preferences`
+
+Added post-launch (feature: "general preferences memory" — free-text likes/dislikes not
+tied to any specific place, e.g. "Jess dislikes crowds"). Deliberately separate from
+`places`/`outing_places`, which are about specific spots and specific visits — this is
+about taste in general, and feeds into the itinerary prompt (section 6) as freeform
+context rather than into `scoring.ts`'s deterministic tag matching, since matching loose
+text like "cozy" or "not too spicy" against place tags reliably isn't worth the complexity
+when an LLM can just reason about fit directly.
+
+| column | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| person | text | check in `('austin', 'jess', 'both')` |
+| sentiment | text | check in `('like', 'dislike')` |
+| note | text not null | free text, e.g. "spicy food", "live music" |
+| created_at | timestamptz | |
+
 ### Indexes
 
 - `places`: GIN on `(cuisine || vibe)` isn't directly indexable as a computed expression
@@ -147,6 +165,7 @@ explicit rating.
   btree on `status`, `transit_mode`, `neighborhood`.
 - `outing_places`: btree on `place_id` (for "when did we last do X"), `outing_id`.
 - `outings`: btree on `outing_date`.
+- `preferences`: btree on `person`.
 
 ### Migration mechanism
 
@@ -180,6 +199,8 @@ All under `/api`. REST-ish, JSON in/out.
   "swap one piece without regenerating the whole plan."
 - `GET /api/weather?date=&days=` — thin proxy over Open-Meteo, mostly for the frontend to
   show a forecast preview in the wizard before generating.
+- `GET/POST /api/preferences`, `DELETE /api/preferences/:id` — general preferences memory
+  CRUD (see the `preferences` table above).
 
 ## 4. Recommendation feed scoring (feature 5, deterministic, no LLM)
 
@@ -211,16 +232,56 @@ Retrieval-then-compose, per the scope doc:
 1. `services/candidates.ts` filters+ranks places from Postgres against wizard criteria
    (budget/mood/indoor-outdoor/transit/day) + weather bias + recency (exclude/deprioritize
    anything in `outing_places` within a configurable recent-repeat window).
-2. That shortlist (name, category, tags, notes, price tier, past rating if any) is passed to
-   `services/anthropic.ts`, which prompts Claude (model configurable via env,
-   default `claude-sonnet-4-5`) to select, sequence, and write the itinerary. The prompt
-   explicitly constrains Claude to choose only `place_id`s present in the shortlist, and the
-   response is requested as structured JSON (`{stops: [{place_id, time_slot, blurb}],
-   summary}`) so the backend can validate every `place_id` against the shortlist before
-   persisting — any hallucinated id is rejected server-side rather than trusted.
+2. That shortlist (name, category, tags, notes, price tier, past rating if any), plus the
+   general preferences memory (section 2's `preferences` table, formatted by
+   `services/preferences.ts`), is passed to `services/anthropic.ts`, which prompts Claude
+   (model configurable via env, default `claude-sonnet-4-5`) to select, sequence, and write
+   the itinerary via a forced tool call (`compose_itinerary`), requested as structured JSON
+   so the backend can validate every referenced place before persisting.
 3. Result is persisted as `outing_places` rows + `outings.itinerary_summary`.
 4. Swap re-runs step 2's ranking (excluding the slot's current place) and asks for one new
-   `{place_id, blurb}` from the remaining shortlist, not a full plan.
+   replacement from the remaining shortlist, not a full plan.
+
+### Web-search-augmented suggestions (opt-in, added post-launch)
+
+Austin asked for the generator to also be able to surface genuinely new ideas — "this is
+happening this weekend" — not just pick from the curated Spots database. That's a real
+tension with the anti-hallucination design above (a hard "only ever cite a real
+`place_id`" guarantee), so before building it, three product decisions were confirmed with
+Austin rather than assumed (his answers, in order): **auto-save discovered places into
+Spots** (tagged `source: 'ai_suggested'` so they're visibly distinct from anything he
+vetted himself); **opt-in per plan** via a wizard checkbox, not always-on (keeps the
+default generation cost/behavior completely unchanged, since web search bills separately
+on top of normal token cost); and **no cap** on how many stops in one plan can come from
+search versus the curated database.
+
+Mechanically, when the wizard's `searchForEvents` flag is true:
+
+1. `services/anthropic.ts` adds Anthropic's server-side `web_search` tool
+   (`web_search_20260209`) alongside `compose_itinerary`, and switches `tool_choice` from
+   forced (`compose_itinerary` only) to `auto` — forcing the tool would prevent Claude from
+   ever calling `web_search` first. The prompt explicitly permits one thing: a stop *may*
+   come from a live web search for something real and current, and *never* from general
+   knowledge alone. Web search is server-executed (Anthropic runs it and returns results
+   inline), so this still resolves in a single API call — no client-side tool loop needed;
+   the code just looks for whichever `tool_use` block is actually named
+   `compose_itinerary` among the response's content blocks, rather than assuming it's the
+   only one, since the response may also contain the model's own search invocations.
+2. Every stop is now *either* an existing shortlist `place_id` *or* a new suggestion
+   (`name` + `source_url`, optionally `category`/`address`/`notes`). The anti-hallucination
+   guarantee is preserved, just widened: `cleanStops()` drops anything that's neither a
+   valid shortlist id nor a new suggestion carrying a real-looking `source_url` — an
+   unsourced "new" stop is exactly the failure mode the whole shortlist-constrained design
+   exists to prevent, web search or not.
+3. `services/resolveStop.ts` turns a surviving new suggestion into a real `places` row
+   (status `want_to_try`, source `ai_suggested`, the source URL folded into `notes` as
+   `"... — Source: <url>"` so it's visible and clickable-by-copy in the Spots UI) before
+   it's referenced by `outing_places` — by the time it's part of an outing, it's an
+   ordinary place row like any other, just distinctly tagged. Swap uses the identical path.
+4. Frontend badges any stop whose `place_source` is `ai_suggested` ("new find") on the
+   Plan and Outings pages, and on the Spots list itself ("AI-discovered"), so it's never
+   ambiguous which places in the database Austin actually chose to add versus which
+   ones the app found on its own.
 
 ## 7. Deploy (Render + Supabase)
 

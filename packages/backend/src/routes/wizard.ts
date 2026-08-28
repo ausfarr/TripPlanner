@@ -29,6 +29,7 @@ export function validateWizardInput(b: unknown): { input: WizardInput } | { erro
       mood: Array.isArray(body.mood) ? body.mood : [],
       indoorOutdoor,
       transitPreference,
+      searchForEvents: body.searchForEvents === true,
     },
   };
 }

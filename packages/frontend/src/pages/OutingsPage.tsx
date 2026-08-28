@@ -74,6 +74,11 @@ export default function OutingsPage() {
                         <p className="text-sm font-medium">
                           {op.time_slot ? `${op.time_slot}: ` : ""}
                           {op.place_name}
+                          {op.place_source === "ai_suggested" && (
+                            <span className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                              new find
+                            </span>
+                          )}
                         </p>
                         {op.blurb && <p className="text-xs text-slate-500">{op.blurb}</p>}
                       </div>

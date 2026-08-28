@@ -4,6 +4,59 @@ Built autonomously in one session (2026-08-28). This is the running log the task
 for — decisions made along the way, what's done, what's left, and exactly what's needed
 from you to go live.
 
+## Update: general preferences memory + opt-in web-search suggestions in itineraries
+
+Two new v1.1 features, requested after the initial build:
+
+**General preferences memory.** A new `preferences` table — free-text likes/dislikes per
+person (Austin/Jess/both), not tied to any specific spot, e.g. "Jess dislikes crowds." CRUD
+lives in a new "General preferences" section at the top of the Preferences page, above the
+existing recommendation feed. Feeds into the itinerary-generation prompt as freeform
+context (`services/preferences.ts` formats it); deliberately NOT wired into the
+deterministic recommendation-feed scoring, since fuzzy-matching loose text against place
+tags isn't worth the complexity when an LLM can just reason about fit directly.
+
+**Web-search-augmented itinerary suggestions (opt-in).** The wizard now has a checkbox —
+off by default — that lets Claude also search the web for genuinely current ideas (events,
+pop-ups) not in the Spots database, using Anthropic's server-side `web_search` tool. Before
+building this, I confirmed three real design forks with Austin rather than guessing (see
+DESIGN.md section 6 for the full mechanics): discovered places auto-save into Spots
+(tagged `source: 'ai_suggested'`, visibly badged "new find"/"AI-discovered" everywhere they
+show up in the UI); it's opt-in per plan, not always-on, since web search bills separately
+from normal token cost; and there's no cap on how many stops per plan can come from search.
+The anti-hallucination guarantee from the original build — Claude can never reference a
+place that doesn't really exist — is preserved, just widened: a "new" suggestion is only
+accepted if it carries a real-looking `source_url`; anything without one is dropped
+server-side, same as an invalid `place_id` always was.
+
+Also upgraded `@anthropic-ai/sdk` 0.32.1 → 0.122.0 — the installed version predated the
+`web_search` tool entirely (confirmed by grepping the installed package for it before
+assuming; it genuinely wasn't there). No other code changes needed for the bump.
+
+**Verification actually performed:** stood up a real Postgres again and ran migration 002
+for real, including confirming the guessed-but-unverified Postgres default constraint name
+(`places_source_check`) was actually right before shipping it — a wrong guess there would
+have failed the migration outright on deploy. Tested the full preferences CRUD API via
+curl. Directly unit-tested `resolveStopPlaceId` (the function that turns a Claude
+suggestion into a real `places` row) against the real test database: existing-place
+passthrough, new-suggestion insert (confirmed `source_url` lands correctly in `notes`),
+and the invalid-shape case throws instead of silently corrupting data. Confirmed
+`getPreferenceSummary()` formats real preference rows into sensible prompt text. Regression-
+tested `/api/itinerary/generate` with `searchForEvents` both true and false against a
+missing API key — both fail at the identical point, confirming neither code path broke.
+What I could *not* test end-to-end: an actual live Claude response containing real
+`web_search_tool_result` blocks, since this sandbox's network egress blocks
+api.anthropic.com (same limitation as the original itinerary feature). I verified the
+response-parsing logic (`findComposeToolUse`) against the Anthropic SDK's own installed
+type definitions instead: web search's own tool invocation shows up as a distinct
+`ServerToolUseBlock` (`type: "server_tool_use"`), not `ToolUseBlock` (`type: "tool_use"`),
+so the filter for the `compose_itinerary` call can't be confused by it — checked the actual
+`.d.ts` union types rather than assuming. Both workspaces typecheck and build clean.
+
+**What to check once this is live:** generate one plan with the "search the web" checkbox
+on and see whether the suggestion quality and source citations feel trustworthy — that's
+the one thing genuinely unverifiable without a live key.
+
 ## Update: CSV importer now also accepts Google Takeout's GeoJSON export
 
 Google Takeout doesn't actually offer a CSV option for Maps "Saved" lists anymore (it may

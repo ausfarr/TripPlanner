@@ -6,7 +6,8 @@ export async function fetchOutingWithPlaces(outingId: string) {
 
   const placesResult = await pool.query(
     `SELECT op.*, p.name AS place_name, p.category AS place_category,
-            p.neighborhood AS place_neighborhood, p.status AS place_status
+            p.neighborhood AS place_neighborhood, p.status AS place_status,
+            p.source AS place_source
      FROM outing_places op
      JOIN places p ON p.id = op.place_id
      WHERE op.outing_id = $1
