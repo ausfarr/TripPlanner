@@ -1,0 +1,21 @@
+# Render Blueprint — see https://render.com/docs/blueprint-spec
+# Optional: lets you spin up the service via "New Blueprint Instance" pointed at this repo
+# instead of the manual "New Web Service" wizard. Either path works equally well; both use
+# the same root Dockerfile. See README.md for the manual click-through steps.
+
+services:
+  - type: web
+    name: weekend-planner
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        sync: false # set manually — Supabase connection string, see README.md
+      - key: ANTHROPIC_API_KEY
+        sync: false # set manually — console.anthropic.com
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-5
+      - key: NODE_ENV
+        value: production

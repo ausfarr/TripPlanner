@@ -1,6 +1,7 @@
 # Multi-stage build: install once at the root (npm workspaces), build the frontend,
 # build the backend, then ship a slim runtime image with just the backend's compiled
-# output + the frontend's static assets. Single Railway service — see DESIGN.md section 7.
+# output + the frontend's static assets. Single app-hosting service (Render) — platform-
+# agnostic build, see DESIGN.md section 7 for the current deploy target and why.
 
 FROM node:22-slim AS deps
 WORKDIR /app

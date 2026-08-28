@@ -12,7 +12,7 @@ Built to be used entirely from a deployed URL — see "Deploy" below.
 - Backend: Node/Express + TypeScript (`packages/backend`)
 - Frontend: React + Vite + Tailwind (`packages/frontend`)
 - Database: Postgres
-- Deploy: Railway (single service, Dockerfile build)
+- Deploy: Render (single free web service, Dockerfile build) + Supabase (free Postgres)
 
 ## Local development
 
@@ -29,13 +29,34 @@ npm run dev:backend              # http://localhost:3000
 npm run dev:frontend             # http://localhost:5173, proxies /api to :3000
 ```
 
-## Deploy (Railway)
+## Deploy (Render + Supabase, both free)
 
-1. Create a Railway project, connect this GitHub repo.
-2. Add a Postgres add-on to the project — Railway injects `DATABASE_URL` into the service
-   automatically.
-3. Set `ANTHROPIC_API_KEY` in the service's variables (see `.env.example` for the full
-   list). This is a separate key from any Claude.ai/Claude Code subscription — create one
-   at console.anthropic.com if needed.
-4. Push to the branch Railway is watching. It builds from the root `Dockerfile` and runs
-   migrations automatically on boot.
+Originally targeted Railway; switched after the Railway trial expired. Render's free web
+service tier + a dedicated Supabase Postgres project cost $0/month — see PROGRESS.md for
+the full reasoning. The Supabase project is already provisioned with the schema applied;
+Render still needs to be connected (that step needs your own account, same as Railway
+would have).
+
+1. **Get the real `DATABASE_URL`.** The Postgres project ("weekend-planner") already
+   exists under your Supabase account. Go to
+   [supabase.com/dashboard/project/vhipuawqafnpakjiopmk/settings/database](https://supabase.com/dashboard/project/vhipuawqafnpakjiopmk/settings/database),
+   copy the connection string (URI format, "Connection pooling" off — this app holds a
+   long-lived `pg.Pool`, not one-shot serverless connections), and fill in the password
+   shown there (or reset it if you don't have it handy).
+2. **Create a Render account** (if you don't have one) at render.com, connect this GitHub
+   repo.
+3. **New Web Service** → pick this repo → Render auto-detects the root `Dockerfile`
+   (or use "New Blueprint Instance" pointed at `render.yaml` for one-click setup with env
+   var names pre-filled). Choose the **Free** instance type.
+4. Set the service's environment variables: `DATABASE_URL` (from step 1),
+   `ANTHROPIC_API_KEY` (console.anthropic.com — separate from any Claude.ai/Claude Code
+   subscription), and optionally `ANTHROPIC_MODEL` / `NODE_ENV=production` (see
+   `.env.example`).
+5. Deploy. Render builds from the `Dockerfile`; migrations run automatically on boot (the
+   schema's already there from the initial provisioning, so this is a no-op on first boot,
+   but harmless either way).
+
+**Free-tier trade-off worth knowing:** Render's free web services spin down after ~15
+minutes of no traffic and cold-start (~30–60s) on the next request. Fine for a
+weekend-planning app you open occasionally; just don't expect an instant load if it's been
+sitting idle.
