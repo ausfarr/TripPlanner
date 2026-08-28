@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 import type { Outing } from "../types.js";
+import { formatOutingDate } from "../format.js";
 
 export default function OutingsPage() {
   const [outings, setOutings] = useState<Outing[]>([]);
@@ -51,7 +52,7 @@ export default function OutingsPage() {
             <li key={outing.id} className="rounded-lg border border-slate-200 bg-white p-4">
               <div className="flex items-center justify-between">
                 <p className="font-medium">
-                  {outing.outing_date}{" "}
+                  {formatOutingDate(outing.outing_date)}{" "}
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{outing.status}</span>
                 </p>
                 {outing.status === "planned" && (

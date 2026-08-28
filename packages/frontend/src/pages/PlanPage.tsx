@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { api } from "../api/client.js";
 import type { IndoorOutdoor, Outing, TransitMode, WizardInput } from "../types.js";
+import { formatOutingDate } from "../format.js";
 
 function todayPlus(days: number): string {
   const d = new Date();
@@ -178,7 +179,7 @@ export default function PlanPage() {
 
           {outings.map((outing) => (
             <div key={outing.id} className="rounded-lg border border-slate-200 bg-white p-4">
-              <p className="font-medium">{outing.outing_date}</p>
+              <p className="font-medium">{formatOutingDate(outing.outing_date)}</p>
               <ul className="mt-2 space-y-2">
                 {outing.places.map((op) => (
                   <li key={op.id} className="rounded-md bg-slate-50 p-2">
