@@ -3,6 +3,8 @@ import { pool } from "../db/pool.js";
 import { getCandidatesForWizard } from "../services/candidates.js";
 import { composeItinerary, composeSwap } from "../services/anthropic.js";
 import { fetchOutingWithPlaces } from "../services/outingQueries.js";
+import { getPreferenceSummary } from "../services/preferences.js";
+import { resolveStopPlaceId } from "../services/resolveStop.js";
 import { validateWizardInput } from "./wizard.js";
 import type { WizardInput } from "../types.js";
 
@@ -17,10 +19,11 @@ router.post("/generate", async (req, res) => {
   const input = validated.input;
 
   const candidateDays = await getCandidatesForWizard(input);
+  const preferenceSummary = await getPreferenceSummary();
 
   let composed;
   try {
-    composed = await composeItinerary(input, candidateDays);
+    composed = await composeItinerary(input, candidateDays, preferenceSummary);
   } catch (err) {
     return res.status(502).json({ error: `Itinerary generation failed: ${(err as Error).message}` });
   }
@@ -42,10 +45,11 @@ router.post("/generate", async (req, res) => {
 
       for (let i = 0; i < day.stops.length; i++) {
         const stop = day.stops[i];
+        const placeId = await resolveStopPlaceId(client, stop);
         await client.query(
           `INSERT INTO outing_places (outing_id, place_id, sequence_order, time_slot, blurb)
            VALUES ($1,$2,$3,$4,$5)`,
-          [outingId, stop.place_id, i + 1, stop.time_slot, stop.blurb],
+          [outingId, placeId, i + 1, stop.time_slot, stop.blurb],
         );
       }
     }
@@ -90,16 +94,26 @@ router.post("/:outingId/swap/:outingPlaceId", async (req, res) => {
     .map((p: { time_slot: string; place_name: string }) => `${p.time_slot}: ${p.place_name}`)
     .join("; ");
 
+  const preferenceSummary = await getPreferenceSummary();
+
   let swap;
   try {
-    swap = await composeSwap(singleDayInput, outing.outing_date, targetStop.time_slot, candidates, restOfDaySummary);
+    swap = await composeSwap(
+      singleDayInput,
+      outing.outing_date,
+      targetStop.time_slot,
+      candidates,
+      restOfDaySummary,
+      preferenceSummary,
+    );
   } catch (err) {
     return res.status(502).json({ error: `Swap failed: ${(err as Error).message}` });
   }
 
+  const newPlaceId = await resolveStopPlaceId(pool, swap);
   await pool.query(
     "UPDATE outing_places SET place_id = $1, blurb = $2, rating = NULL, rating_note = NULL, rated_at = NULL WHERE id = $3",
-    [swap.place_id, swap.blurb, req.params.outingPlaceId],
+    [newPlaceId, swap.blurb, req.params.outingPlaceId],
   );
 
   res.json(await fetchOutingWithPlaces(req.params.outingId));

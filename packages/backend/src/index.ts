@@ -10,6 +10,7 @@ import recommendationsRouter from "./routes/recommendations.js";
 import wizardRouter from "./routes/wizard.js";
 import itineraryRouter from "./routes/itinerary.js";
 import weatherRouter from "./routes/weather.js";
+import preferencesRouter from "./routes/preferences.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -23,6 +24,7 @@ app.use("/api/recommendations", recommendationsRouter);
 app.use("/api/wizard", wizardRouter);
 app.use("/api/itinerary", itineraryRouter);
 app.use("/api/weather", weatherRouter);
+app.use("/api/preferences", preferencesRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });

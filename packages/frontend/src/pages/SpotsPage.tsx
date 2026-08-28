@@ -340,7 +340,12 @@ export default function SpotsPage() {
                     {place.name}{" "}
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
                       {STATUS_LABEL[place.status]}
-                    </span>
+                    </span>{" "}
+                    {place.source === "ai_suggested" && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                        AI-discovered
+                      </span>
+                    )}
                   </p>
                   <p className="text-xs text-slate-500">
                     {place.category}

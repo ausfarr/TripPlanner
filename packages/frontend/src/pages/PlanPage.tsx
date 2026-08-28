@@ -17,6 +17,7 @@ export default function PlanPage() {
   const [mood, setMood] = useState("");
   const [indoorOutdoor, setIndoorOutdoor] = useState<IndoorOutdoor | "no_preference">("no_preference");
   const [transitPreference, setTransitPreference] = useState<TransitMode>("either");
+  const [searchForEvents, setSearchForEvents] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +40,7 @@ export default function PlanPage() {
           .filter(Boolean),
         indoorOutdoor,
         transitPreference,
+        searchForEvents,
       };
       const result = await api.itinerary.generate(input);
       setSummary(result.summary);
@@ -159,6 +161,19 @@ export default function PlanPage() {
           />
         </label>
 
+        <label className="col-span-2 flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={searchForEvents}
+            onChange={(e) => setSearchForEvents(e.target.checked)}
+          />
+          <span>
+            Also search the web for what's happening this weekend (pop-ups, events, limited-run things) — adds a
+            small cost per plan and can suggest something outside your Spots list, clearly marked and cited.
+          </span>
+        </label>
+
         <button
           type="submit"
           disabled={loading}
@@ -188,6 +203,11 @@ export default function PlanPage() {
                         <p className="text-sm font-medium">
                           {op.time_slot ? `${op.time_slot}: ` : ""}
                           {op.place_name}
+                          {op.place_source === "ai_suggested" && (
+                            <span className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                              new find
+                            </span>
+                          )}
                         </p>
                         {op.blurb && <p className="text-xs text-slate-500">{op.blurb}</p>}
                       </div>
