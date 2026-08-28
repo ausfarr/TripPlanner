@@ -163,7 +163,10 @@ safety.
 All under `/api`. REST-ish, JSON in/out.
 
 - `GET/POST /api/places`, `GET/PATCH/DELETE /api/places/:id` — Spots CRUD.
-- `POST /api/places/import` — multipart CSV upload, seed import.
+- `POST /api/places/import` — multipart file upload, seed import. Accepts either CSV or
+  the GeoJSON that Google Takeout actually exports for Maps "Saved" lists (Takeout doesn't
+  offer CSV for those — discovered when Austin went to use the importer; see PROGRESS.md).
+  Format is detected by file extension with a content-sniff fallback.
 - `GET /api/recommendations` — scored, ranked list (query params for category/filter).
 - `GET/POST /api/outings`, `GET/PATCH /api/outings/:id` — history log CRUD.
 - `POST /api/outings/:id/places/:outingPlaceId/rate` — post-outing thumbs up/down + note.

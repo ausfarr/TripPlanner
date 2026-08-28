@@ -4,6 +4,29 @@ Built autonomously in one session (2026-08-28). This is the running log the task
 for — decisions made along the way, what's done, what's left, and exactly what's needed
 from you to go live.
 
+## Update: CSV importer now also accepts Google Takeout's GeoJSON export
+
+Google Takeout doesn't actually offer a CSV option for Maps "Saved" lists anymore (it may
+have at some point, or CSV support may vary by list type — either way, what Austin got back
+was GeoJSON: a FeatureCollection per list, each feature a saved place with a
+`properties.location` object and a `[lng, lat]` point). Rather than sending him back to
+fight Takeout's export options, extended `/api/places/import` to accept both formats,
+detected by file extension with a content-sniff fallback for a renamed file.
+
+The GeoJSON path is arguably better data than CSV would have been — it carries real lat/lng
+coordinates, which the CSV path never had, so those imported places now support future
+distance-based features without needing a separate geocoding step. Handles the case where a
+saved pin has no resolved `location` object (a bare save without full place data) by
+falling back to the place's Google Maps URL as the name rather than silently dropping the
+row — not a great display name, but editable in Spots afterward, and better than losing
+data. Frontend file picker now accepts `.csv,.json` and the copy explains both are
+supported.
+
+Verified against a real Postgres with a hand-built GeoJSON sample matching Takeout's actual
+shape (including a location-less feature): all rows imported correctly with lat/lng and
+notes preserved, re-import correctly caught all three as duplicates, and the existing CSV
+path was re-tested as a regression check — still works. Both workspaces typecheck clean.
+
 ## Update: first Render deploy failed — ENETUNREACH connecting to Postgres
 
 First real deploy attempt hit `Error: connect ENETUNREACH 2600:...` at boot, trying to
