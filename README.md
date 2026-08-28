@@ -17,7 +17,7 @@ Built to be used entirely from a deployed URL — see "Deploy" below.
 ## Local development
 
 Only needed if you're iterating on the code somewhere Node/Postgres installs aren't
-blocked — day-to-day use is via the deployed Railway URL, not a local run.
+blocked — day-to-day use is via the deployed Render URL, not a local run.
 
 ```bash
 npm install                      # installs both workspaces
@@ -37,12 +37,20 @@ the full reasoning. The Supabase project is already provisioned with the schema 
 Render still needs to be connected (that step needs your own account, same as Railway
 would have).
 
-1. **Get the real `DATABASE_URL`.** The Postgres project ("weekend-planner") already
-   exists under your Supabase account. Go to
-   [supabase.com/dashboard/project/vhipuawqafnpakjiopmk/settings/database](https://supabase.com/dashboard/project/vhipuawqafnpakjiopmk/settings/database),
-   copy the connection string (URI format, "Connection pooling" off — this app holds a
-   long-lived `pg.Pool`, not one-shot serverless connections), and fill in the password
-   shown there (or reset it if you don't have it handy).
+1. **Get the real `DATABASE_URL` — use the Session Pooler, not the direct connection.**
+   The Postgres project ("weekend-planner") already exists under your Supabase account. Go
+   to [supabase.com/dashboard/project/vhipuawqafnpakjiopmk/settings/database](https://supabase.com/dashboard/project/vhipuawqafnpakjiopmk/settings/database)
+   and copy the **Session pooler** connection string (URI format), not the direct one.
+   This matters: Supabase's direct connection (`db.<ref>.supabase.co`) is IPv6-only on the
+   free tier, and several hosts — Render included — don't support outbound IPv6, which
+   fails with `ENETUNREACH` at boot. The Session pooler is IPv4 and is the right choice
+   for a persistent server like this one anyway (vs. the Transaction pooler, meant for
+   serverless/short-lived connections). It looks like:
+   ```
+   postgres://postgres.vhipuawqafnpakjiopmk:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+   ```
+   Fill in the real password (shown on that same settings page, or reset it there if you
+   don't have it handy).
 2. **Create a Render account** (if you don't have one) at render.com, connect this GitHub
    repo.
 3. **New Web Service** → pick this repo → Render auto-detects the root `Dockerfile`
