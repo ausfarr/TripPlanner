@@ -252,9 +252,14 @@ pivot.
     sensitive") exposure via that unused REST layer; enabling it costs this app nothing
     since our own connection isn't subject to it. Left for Austin to decide — see
     PROGRESS.md for the exact SQL.
-- Env vars (see `.env.example`): `DATABASE_URL` (Supabase connection string — the DB
-  password isn't retrievable via API, so getting the real value is a one-time dashboard
-  visit, documented in README.md), `ANTHROPIC_API_KEY`, `PORT` (Render sets this
+- Env vars (see `.env.example`): `DATABASE_URL` — **the Session Pooler connection string,
+  not the direct one**. Supabase's direct connection is IPv6-only on the free tier, and
+  Render (like several other hosts) has no outbound IPv6, which fails at boot with
+  `ENETUNREACH` — hit this for real on the first deploy attempt, documented in PROGRESS.md.
+  The Session pooler is IPv4 and is also the correct choice generally for a persistent
+  server (as opposed to the Transaction pooler, meant for serverless). The DB password
+  isn't retrievable via API, so getting the real value is a one-time dashboard visit,
+  documented in README.md. Also `ANTHROPIC_API_KEY`, `PORT` (Render sets this
   automatically), `ANTHROPIC_MODEL` (optional override), `NODE_ENV`.
 - No auth in v1 (data isn't sensitive, matches scope doc) — access control is just an
   unlisted Render URL. Noted as an easy later add (single shared-password middleware) if

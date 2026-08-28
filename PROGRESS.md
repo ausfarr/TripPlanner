@@ -4,6 +4,31 @@ Built autonomously in one session (2026-08-28). This is the running log the task
 for — decisions made along the way, what's done, what's left, and exactly what's needed
 from you to go live.
 
+## Update: first Render deploy failed — ENETUNREACH connecting to Postgres
+
+First real deploy attempt hit `Error: connect ENETUNREACH 2600:...` at boot, trying to
+reach the database during the migration step. Root cause: Supabase's **direct** Postgres
+connection (`db.<ref>.supabase.co`) is IPv6-only on the free tier, and Render's free tier
+has no outbound IPv6 — the `2600:...` address in the error is that IPv6 host. This is a
+known, documented incompatibility (Supabase's own docs list Render by name as an
+IPv6-incompatible platform).
+
+Fix: use Supabase's **Session Pooler** connection string instead of the direct one —
+IPv4-compatible, and the right choice generally for a persistent server holding a
+connection pool (as opposed to the Transaction pooler, meant for serverless/short-lived
+connections). Verified the pooler hostname actually resolves to IPv4 addresses before
+handing it over, rather than guessing:
+
+```
+postgres://postgres.vhipuawqafnpakjiopmk:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+```
+
+This was my mistake to correct, not a new decision to flag: my original README/`.env.example`
+guidance told Austin to copy the direct connection string ("Connection pooling off"),
+which is exactly what caused this. Fixed in README.md, `.env.example`, and DESIGN.md so the
+guidance is right for anyone reading it going forward. No app code changed — this was
+purely a wrong instruction, not a bug in `pool.ts` or the migration runner.
+
 ## Update: Railway trial expired → switched to Render + Supabase (both free)
 
 You flagged that the Railway trial had expired and asked for a free option instead. What
