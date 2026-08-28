@@ -4,6 +4,52 @@ Built autonomously in one session (2026-08-28). This is the running log the task
 for — decisions made along the way, what's done, what's left, and exactly what's needed
 from you to go live.
 
+## Update: Railway trial expired → switched to Render + Supabase (both free)
+
+You flagged that the Railway trial had expired and asked for a free option instead. What
+changed:
+
+- **Database:** provisioned a brand-new, dedicated Supabase Postgres project —
+  **"weekend-planner"**, project ref `vhipuawqafnpakjiopmk`, in your existing Supabase
+  account/org — via the Supabase MCP tools available in this session. Confirmed the cost
+  first (`get_cost` returned $0/month, free tier) before creating anything, since that's a
+  real resource on your actual account, not just a code change. Deliberately a new project,
+  not your existing "World Builder" Supabase project — matches "standalone, don't reuse
+  other projects' infra."
+- Applied the full schema (`001_init.sql`) to it directly via Supabase's migration API, and
+  seeded the app's own `_migrations` bookkeeping row to match, so the app's normal
+  boot-time migration runner won't try to re-run that (non-idempotent) `CREATE TABLE` SQL
+  against a database that already has it — verified via `list_tables` that all three data
+  tables plus `_migrations` exist.
+- **One security note surfaced by Supabase's own tooling, not auto-fixed:** every Supabase
+  project also exposes a public REST API (PostgREST) gated by Row-Level Security, and RLS
+  is currently *off* on all four tables. This app never uses that REST layer — it connects
+  with a plain `pg.Pool` over the Postgres connection string (the `postgres` role, which
+  bypasses RLS regardless) — so it doesn't affect how *this* app behaves. But it does mean
+  anyone who obtained this project's anon key could read/write the tables directly through
+  Supabase's REST API, bypassing the Express backend entirely. Given "data isn't
+  sensitive" this is low-stakes, but enabling RLS costs this app nothing (again: our
+  connection isn't subject to it), so it's a free hardening step if you want it. Run this
+  in the Supabase SQL editor whenever you want it on — I didn't apply it myself, since
+  turning on RLS with no policies is the kind of thing you should choose, not have decided
+  for you:
+  ```sql
+  ALTER TABLE public.places ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE public.outings ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE public.outing_places ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE public._migrations ENABLE ROW LEVEL SECURITY;
+  ```
+- **App hosting:** switched from Railway to **Render**'s free web-service tier. The
+  Dockerfile was never Railway-specific, so no app code changed — only `railway.json` was
+  removed and `render.yaml` added, plus DESIGN.md/README.md updated. Render's free tier
+  spins the service down after ~15 min idle and cold-starts (~30–60s) on the next request —
+  a real trade-off of "free," worth knowing going in, but fine for an app you open
+  occasionally rather than one that needs to be always warm.
+- I could not create the Render account or connect the GitHub repo myself — that's the one
+  remaining step, same as it would've been on Railway. See "What's left" below for the
+  exact steps, including where to get the real `DATABASE_URL` (the Supabase DB password
+  isn't retrievable through the API I have, so that's a one-time dashboard visit).
+
 ## What's done
 
 **Design.** `DESIGN.md` covers repo structure, the Postgres schema, API shape, the
@@ -12,9 +58,10 @@ choice. Built from `weekendplannerscope.md`, which you'd already scoped thorough
 open questions in there were already resolved, so I proceeded straight to building rather
 than re-asking them.
 
-**Repo scaffold.** npm workspaces monorepo (`packages/backend`, `packages/frontend`),
-deployed as a single Railway service — Express serves both the API and the built frontend,
-so there's one service and one Postgres add-on to manage, not two deployments.
+**Repo scaffold.** npm workspaces monorepo (`packages/backend`, `packages/frontend`) —
+Express serves both the API and the built frontend from one process, so there's one app
+service to manage (now Render; see the update above) plus one external Postgres
+(Supabase), not a pile of separate deployments.
 
 **Backend (Express/TypeScript), all seven v1 features:**
 - Spots CRUD (`/api/places`) with status/category/transit filters and search.
@@ -40,7 +87,7 @@ per-stop swap), Preferences (recommendation feed), Spots (CRUD + CSV import), Ou
 (history + rating) — wired to the backend through a typed fetch client.
 
 **Deploy config:** root `Dockerfile` (multi-stage: build frontend, build backend, ship a
-slim runtime image), `railway.json`, `.env.example` with placeholders only.
+slim runtime image), `render.yaml`, `.env.example` with placeholders only.
 
 ## Verification actually performed (not just "should work")
 
@@ -63,7 +110,7 @@ what was checked, concretely, in this sandbox:
   `public`/`migrations` into the exact runtime layout) and booted the result against a real
   Postgres — confirmed migrations ran, static frontend served, and `/api/*` 404s correctly
   instead of falling through to the SPA route. This is the closest verification possible
-  short of an actual Railway deploy.
+  short of an actual Render deploy.
 - Both workspaces typecheck clean (`tsc --noEmit`) and build clean.
 - What I did *not* test: Open-Meteo and the Anthropic API calls themselves — this
   sandbox's network egress is allowlisted and blocks both hosts. Both fail *gracefully*
@@ -98,30 +145,39 @@ Flagging these since you weren't watching step by step:
   weekend plan. Reasonable to revisit if a plan ever spans, say, Manhattan and Montauk on
   the same day with very different weather.
 - **No auth in v1** — matches "data isn't sensitive," per the scope doc. The app is only as
-  private as the Railway URL is unlisted.
+  private as the Render URL is unlisted.
 
 ## What's left — needs you
 
-Everything code-shaped is done and pushed to `claude/weekend-planner-scaffold-ac5x23`.
-What's left is the handful of steps only you can do:
+Everything code-shaped is done and pushed to `claude/weekend-planner-scaffold-ac5x23`. The
+database is already provisioned and has the schema on it. What's left is the handful of
+steps only you can do:
 
-1. **Create a Railway account/project** (if you don't have one) and connect this GitHub
-   repo to it.
-2. **Add a Postgres add-on** to the Railway project — it auto-injects `DATABASE_URL` into
-   the service, no manual wiring needed.
-3. **Get an Anthropic API key** (console.anthropic.com — separate from your Claude Code/
-   Cowork subscription, per your instructions) and set it as `ANTHROPIC_API_KEY` in the
-   Railway service's variables.
-4. **Deploy** — push (or click deploy) and Railway builds from the root `Dockerfile`.
-   Migrations run automatically on boot.
-5. Once it's live: **add a handful of real spots** (or run the CSV import against your
+1. **Get the real `DATABASE_URL`.** Go to
+   [supabase.com/dashboard/project/vhipuawqafnpakjiopmk/settings/database](https://supabase.com/dashboard/project/vhipuawqafnpakjiopmk/settings/database)
+   and copy the connection string (URI format, direct connection not the pooler — this app
+   holds a long-lived connection pool, not one-shot serverless calls). You'll need to fill
+   in or reset the DB password there; it isn't something I can retrieve through the API.
+2. **Create a Render account** (if you don't have one) at render.com and connect this
+   GitHub repo.
+3. **New Web Service**, pick this repo, Free instance type — Render auto-detects the root
+   `Dockerfile` (or use "New Blueprint Instance" against `render.yaml`).
+4. **Get an Anthropic API key** (console.anthropic.com — separate from your Claude Code/
+   Cowork subscription, per your instructions) and set both it and step 1's
+   `DATABASE_URL` in the Render service's environment variables.
+5. **Deploy.** Render builds from the `Dockerfile`; migrations run automatically on boot
+   (a no-op on first boot since the schema's already there, but harmless).
+6. Once it's live: **add a handful of real spots** (or run the CSV import against your
    actual Google Maps export) so the recommendation feed and wizard have something to work
    with — both are currently empty-state until you seed data. Then take it for a real spin
    — generate one actual plan and see whether the swap flow and the LLM's output quality
    feel right; that's the one part I couldn't fully exercise here (see verification notes
    above), and your real preference data will shape the itinerary prompt in ways synthetic
    test data can't.
+7. Optional: decide whether to enable Row-Level Security on the Supabase tables — see the
+   "Railway trial expired" update above for the exact SQL and why it's safe to turn on
+   without breaking anything.
 
 Nothing here is a design fork in the road — it's account/credential setup, which isn't
-mine to do. Ping me once Railway's connected and I can help debug the first real deploy if
+mine to do. Ping me once Render's connected and I can help debug the first real deploy if
 anything doesn't come up clean.

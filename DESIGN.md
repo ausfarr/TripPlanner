@@ -6,10 +6,11 @@ scoping conversation this is derived from, and `PROGRESS.md` for build status / 
 
 ## 1. Repo structure
 
-Single repo, npm workspaces monorepo, deployed as **one Railway service** (not two). The
+Single repo, npm workspaces monorepo, deployed as **one app-hosting service** (not two). The
 Express server serves both the JSON API and the built frontend static assets — this keeps
-Railway config to a single service + a Postgres add-on, avoids CORS entirely, and avoids
-paying for/managing two deployed services for a single-user app.
+deploy config to a single service + one external Postgres, avoids CORS entirely, and avoids
+paying for/managing two deployed services for a single-user app. (Originally one Railway
+service; now Render for the app + a separate Supabase project for Postgres — see section 7.)
 
 ```
 /
@@ -20,7 +21,7 @@ paying for/managing two deployed services for a single-user app.
   .gitignore
   .env.example
   Dockerfile                 # multi-stage: build frontend -> build backend -> run
-  railway.json
+  render.yaml
   packages/
     backend/
       package.json
@@ -66,7 +67,7 @@ paying for/managing two deployed services for a single-user app.
 
 Why npm workspaces over two separate repos or a single flat app: keeps backend/frontend
 dependency trees isolated (Vite's deps vs. Express's) while still being one `git clone`,
-one Railway service, one deploy. `npm install` at the root installs both.
+one app-hosting service, one deploy. `npm install` at the root installs both.
 
 ## 2. Data model (Postgres)
 
@@ -152,9 +153,10 @@ explicit rating.
 No ORM, no `node-pg-migrate` dependency — just numbered `.sql` files in
 `backend/src/db/migrations/` and a ~40-line runner (`db/migrate.ts`) that tracks applied
 filenames in a `_migrations` table and runs new ones in order. Runs automatically on server
-boot (idempotent, safe for Railway's deploy-on-push). This is a single-developer, single-env
-project (dev + prod are effectively "local disabled, Railway is the only real environment");
-a migration framework would be overhead, not safety.
+boot (idempotent, safe for deploy-on-push on Render or any similar host). This is a
+single-developer, single-env project (dev + prod are effectively "local disabled, the
+deployed host is the only real environment"); a migration framework would be overhead, not
+safety.
 
 ## 3. API shape
 
@@ -217,18 +219,45 @@ Retrieval-then-compose, per the scope doc:
 4. Swap re-runs step 2's ranking (excluding the slot's current place) and asks for one new
    `{place_id, blurb}` from the remaining shortlist, not a full plan.
 
-## 7. Deploy (Railway)
+## 7. Deploy (Render + Supabase)
 
-- One Railway service built from the repo's root `Dockerfile` (multi-stage: install +
-  `vite build` the frontend, install + `tsc` build the backend, final stage copies backend
-  `dist/` + frontend `dist/` into a slim `node:22-slim` runtime image, backend serves
-  frontend `dist/` as static files for any non-`/api` route).
-- Railway Postgres add-on, linked via `DATABASE_URL` (Railway injects this automatically
-  when the add-on is attached to the service — no manual wiring beyond attaching it).
-- Env vars (see `.env.example`): `DATABASE_URL`, `ANTHROPIC_API_KEY`, `PORT` (Railway sets
-  this automatically), `ANTHROPIC_MODEL` (optional override), `NODE_ENV`.
+Originally targeted Railway (single service, Postgres add-on) — switched mid-build when
+Austin's Railway trial expired and a genuinely free option was needed. The Dockerfile is
+platform-agnostic (it was never Railway-specific), so the app itself needed zero rework;
+only the deploy target and docs changed. See PROGRESS.md for the full account of this
+pivot.
+
+- **App hosting: Render**, free web service tier, built from the same root `Dockerfile`
+  (multi-stage: install + `vite build` the frontend, install + `tsc` build the backend,
+  final stage copies backend `dist/` + frontend `dist/` into a slim `node:22-slim` runtime
+  image, backend serves frontend `dist/` as static files for any non-`/api` route). Costs
+  $0/month; trades that for spinning down after ~15 min idle (cold start on next request)
+  — acceptable for an app opened occasionally, not continuously.
+- **Database: a dedicated Supabase Postgres project** ("weekend-planner", provisioned
+  under Austin's own Supabase account, not shared with his other projects — consistent
+  with "standalone, don't reuse other projects' infra"). Deliberately *not* Render's own
+  bundled free Postgres, which expires after 90 days — the same reason Render's Postgres
+  was already ruled out in the original scoping conversation; Supabase's free tier has no
+  hard expiry (it auto-pauses after a week of total inactivity but resumes on the next
+  connection, not a data-loss event). The schema (`001_init.sql`) was applied directly via
+  Supabase's management API during provisioning; the app's own `_migrations` bookkeeping
+  table was seeded to match, so its normal boot-time migration runner sees `001_init.sql`
+  as already applied and doesn't attempt to re-run the (non-idempotent) `CREATE TABLE`
+  statements against it.
+  - Supabase provisions a public PostgREST API + anon key alongside the raw database by
+    default, gated by Row-Level Security (RLS). This app never uses that layer — it
+    connects with a direct `pg.Pool` over the Postgres connection string, which uses the
+    `postgres` role and bypasses RLS regardless of whether it's enabled. RLS is currently
+    *off* on all four tables, which is a real (if low-severity, given "data isn't
+    sensitive") exposure via that unused REST layer; enabling it costs this app nothing
+    since our own connection isn't subject to it. Left for Austin to decide — see
+    PROGRESS.md for the exact SQL.
+- Env vars (see `.env.example`): `DATABASE_URL` (Supabase connection string — the DB
+  password isn't retrievable via API, so getting the real value is a one-time dashboard
+  visit, documented in README.md), `ANTHROPIC_API_KEY`, `PORT` (Render sets this
+  automatically), `ANTHROPIC_MODEL` (optional override), `NODE_ENV`.
 - No auth in v1 (data isn't sensitive, matches scope doc) — access control is just an
-  unlisted Railway URL. Noted as an easy later add (single shared-password middleware) if
+  unlisted Render URL. Noted as an easy later add (single shared-password middleware) if
   that ever changes, not architected against.
 
 ## 8. Deliberately out of scope / not blocked
